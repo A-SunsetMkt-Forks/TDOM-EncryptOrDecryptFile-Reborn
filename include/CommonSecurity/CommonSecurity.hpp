@@ -1325,13 +1325,39 @@ namespace CommonSecurity
 			}
 		}
 
-		//C++ 生成伪随机数
-		//C++ generates random numbers
+		// C++ 生成伪随机数
+		/**
+		 * @brief Generates a random number within the specified range [minimum, maximum].
+		 *
+		 * This function generates a random number using either a linear (uniform) distribution or a non-linear 
+		 * (triangular) distribution based on the value of the `is_nonlinear_mode` flag.
+		 * 
+		 * - **Linear (Uniform) Distribution**: If `is_nonlinear_mode` is false, the function generates a random 
+		 *   number using a uniform distribution over the range [minimum, maximum]. 
+		 *   - If the range is requested to be negative (minimum < 0 and maximum <= 0), special logic is applied 
+		 *     to handle signed integer ranges correctly, ensuring no overflow occurs when calculating the negative bounds.
+		 *   - If the user specifies a range where the minimum is greater than the maximum, the function automatically 
+		 *     swaps the bounds.
+		 * 
+		 * - **Non-Linear (Triangular) Distribution**: If `is_nonlinear_mode` is true, the function uses a 
+		 *   triangular distribution (U-shaped) to generate the random number.
+		 *   - The distribution is achieved by sampling two uniformly distributed values and combining them to produce 
+		 *     a value with higher probability near the center of the range.
+		 *   - The result is folded to ensure it stays within the specified bounds.
+		 * 
+		 * @param minimum The lower bound of the random number range (inclusive).
+		 * @param maximum The upper bound of the random number range (inclusive).
+		 * @param is_nonlinear_mode A flag indicating whether to use a non-linear (triangular) distribution or a 
+		 *                          uniform distribution.
+		 * 
+		 * @return A randomly generated number of type `IntegerType` within the range [minimum, maximum] based 
+		 *         on the specified distribution type.
+		 */
 		template <typename IntegerType>
 		requires std::integral<IntegerType>
-		IntegerType GenerateNumber( IntegerType minimum, IntegerType maximum, bool is_nonlinear_mode)
+		IntegerType GenerateNumber(IntegerType minimum, IntegerType maximum, bool is_nonlinear_mode)
 		{
-			if ( PseudoRandomIsInitialBySeed == true )
+			if (PseudoRandomIsInitialBySeed == true)
 			{
 				if (minimum > 0)
 					minimum = std::numeric_limits<IntegerType>::min();
@@ -1340,88 +1366,83 @@ namespace CommonSecurity
 
 				if (!is_nonlinear_mode)
 				{
-					static RND::UniformIntegerDistribution<IntegerType> number_distribution( minimum, maximum );
-					
+					static RND::UniformIntegerDistribution<IntegerType> number_distribution(minimum, maximum);
+
 					if constexpr(std::signed_integral<IntegerType>)
 					{
-						auto random_unsigned_number = number_distribution( random_generator );
-						auto random_unsigned_number2 = number_distribution( random_generator );
+						IntegerType first_random = number_distribution(random_generator);
+						IntegerType second_random = number_distribution(random_generator);
 
-						if (minimum < 0)
+						// -- If the lower bound passed in by the user is greater than the upper bound, exchange them -- 
+						if (minimum > maximum)
+							std::swap(minimum, maximum);
+
+						//  -- Special logic only when requesting “full negative intervals” (minimum < 0 && maximum <= 0) --  
+						if (minimum < 0 && maximum <= 0)
 						{
-							auto can_be_subtracted_count = minimum;
-								~can_be_subtracted_count;
-							
-							RegenerateNumber:
+							using UnsignedInteger = std::make_unsigned_t<IntegerType>;
+							UnsignedInteger lower_bound;
+							UnsignedInteger upper_bound;
 
-							while(random_unsigned_number > can_be_subtracted_count - 1 || random_unsigned_number == 0)
-								random_unsigned_number = number_distribution( random_generator );
+							// Underflow detection: whether minimum * 2 would be outside the representable range.
+							if (minimum <= std::numeric_limits<IntegerType>::min() / 2)
+							{
+								lower_bound = static_cast<UnsignedInteger>(std::numeric_limits<IntegerType>::min());
+								upper_bound = static_cast<UnsignedInteger>(0);
+							}
+							else
+							{
+								lower_bound = static_cast<UnsignedInteger>(minimum * 2);
+								upper_bound = static_cast<UnsignedInteger>(-maximum);
+							}
 
-							while(random_unsigned_number2 > can_be_subtracted_count - 1 || random_unsigned_number2 == 0)
-								random_unsigned_number2 = number_distribution( random_generator );
+							UnsignedInteger range_count = upper_bound - lower_bound + 1;
+							if (range_count == 0)
+								return first_random; // full‑width cover
 
-							if (random_unsigned_number == random_unsigned_number2)
-								goto RegenerateNumber;
+							UnsignedInteger offset = 
+							((static_cast<UnsignedInteger>(first_random) - lower_bound)
+							+ (static_cast<UnsignedInteger>(second_random) - lower_bound))
+							% range_count;
 
-							if (random_unsigned_number > random_unsigned_number2)
-								return 0 - random_unsigned_number;
-							else if (random_unsigned_number < random_unsigned_number2)
-								return 0 - random_unsigned_number2;
+							return static_cast<IntegerType>(offset + lower_bound);
 						}
-
-						return number_distribution( random_generator );
+						else
+						{
+							// Other cases: positive or mixed intervals, direct uniform
+							return number_distribution(random_generator);
+						}
 					}
 					else
-						return number_distribution( random_generator );
+						return number_distribution(random_generator);
 				}
 				else
 				{
-					IntegerType random_number = 0, random_number2 = 0;
+					// Triangular or U-shaped distribution
 
-					if ( maximum == std::numeric_limits<IntegerType>::max() )
-						maximum -= 1;
+					static RND::UniformIntegerDistribution<IntegerType> number_distribution(minimum, maximum);
 
-					auto lambda_GenerateNumberAtIntervals = [&random_number, &random_number2, &minimum](const IntegerType middle_number)
-					{
-						for( random_number = random_generator(); random_number < minimum || random_number > middle_number; )
-						{
-							random_number = random_generator();
-						}
+					using UnsignedInteger = std::make_unsigned_t<IntegerType>;
 
-						for( random_number2 = random_generator(); random_number2 < minimum || random_number2 > middle_number + 1; )
-						{
-							random_number2 = random_generator();
-						}
-					};
+					UnsignedInteger lower_bound = static_cast<UnsignedInteger>(minimum);
+					UnsignedInteger upper_bound = static_cast<UnsignedInteger>(maximum);
+					UnsignedInteger range_count = upper_bound - lower_bound + 1;
 
-					if ( (maximum & 1) == 1 )
-					{
-						auto middle_number = (maximum + 1) >> 1;
+					// If range_count == 0, indicating the entire integer domain; directly return a random number
+					if (range_count == 0)
+						return number_distribution(random_generator);
 
-						lambda_GenerateNumberAtIntervals(middle_number);
+					// Sample twice uniformly, then "fold" them into a Triangular distribution
+					UnsignedInteger first_offset  = static_cast<UnsignedInteger>(number_distribution(random_generator)) - lower_bound;
+					UnsignedInteger second_offset = static_cast<UnsignedInteger>(number_distribution(random_generator)) - lower_bound;
+					UnsignedInteger sum_offset    = first_offset + second_offset;
 
-						auto range_count = random_number + random_number2;
+					// If sumOffset is within [0, range_count − 1], directly return it; otherwise, map to the symmetric position
+					UnsignedInteger foldedOffset = (sum_offset < range_count)
+						? sum_offset
+						: (2 * (range_count - 1) - sum_offset);
 
-						if (range_count == maximum)
-							return middle_number - 1;
-						else if (range_count < middle_number)
-							return middle_number - range_count - 1;
-						else
-							return maximum - range_count + middle_number - 1;
-					}
-					else
-					{
-						auto middle_number = maximum >> 1;
-
-						lambda_GenerateNumberAtIntervals(middle_number);
-
-						auto range_count = random_number + random_number2;
-
-						if(range_count < middle_number)
-							return middle_number - range_count - 1;
-						else
-							return maximum - range_count + middle_number - 1;
-					}
+					return static_cast<IntegerType>(foldedOffset + lower_bound);
 				}
 			}
 		}

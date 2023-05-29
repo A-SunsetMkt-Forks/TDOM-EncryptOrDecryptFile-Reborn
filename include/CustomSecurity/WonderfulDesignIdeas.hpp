@@ -397,7 +397,7 @@ namespace Cryptograph::CustomizedKDF
 
 			//A design structure with reference to the symmetric encryption-decryption algorithm : Feistel
 			//参考了对称加密解密算法的一种设计结构 : Feistel
-			for(std::size_t ExexuteRound = 0; ExexuteRound < 8; ++ExexuteRound)
+			for(std::size_t ExecuteRound = 0; ExecuteRound < 8; ++ExecuteRound)
 			{
 				//Unidirectional Transformations (data hash hashers and pseudo-random number generators)
 				//单向变换（数据散列器和伪随机数生成器）

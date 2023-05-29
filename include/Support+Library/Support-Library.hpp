@@ -751,7 +751,7 @@ static inline volatile void* memory_set_no_optimize_function(void* buffer_pointe
 #endif
 
 // Try to allocate a temporary memory size.
-std::optional<std::size_t> try_allocate_temporary_memory_size(std::size_t memory_byte_size)
+inline std::optional<std::size_t> try_allocate_temporary_memory_size(std::size_t memory_byte_size)
 {
 	std::size_t temporary_memory_byte_size = 0;
 
